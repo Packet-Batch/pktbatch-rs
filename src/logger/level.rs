@@ -1,3 +1,5 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -9,6 +11,12 @@ pub enum LogLevel {
     Warn = 3,
     Error = 4,
     Fatal = 5,
+}
+
+impl Default for LogLevel {
+    fn default() -> Self {
+        LogLevel::Info
+    }
 }
 
 impl From<String> for LogLevel {
@@ -28,5 +36,20 @@ impl From<String> for LogLevel {
 impl From<&str> for LogLevel {
     fn from(s: &str) -> Self {
         s.to_string().into()
+    }
+}
+
+impl fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let level_str = match self {
+            LogLevel::Trace => "TRACE",
+            LogLevel::Debug => "DEBUG",
+            LogLevel::Info => "INFO",
+            LogLevel::Warn => "WARN",
+            LogLevel::Error => "ERROR",
+            LogLevel::Fatal => "FATAL",
+        };
+
+        write!(f, "{}", level_str)
     }
 }

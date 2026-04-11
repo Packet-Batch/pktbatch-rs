@@ -1,4 +1,3 @@
-pub mod ext;
 pub mod base;
 
 pub mod ip;

@@ -1,30 +1,68 @@
-use crate::logger::{base::LoggerBase, level::LogLevel};;
+use std::{fs, io::Write, path::PathBuf};
+
+use anyhow::{Result, anyhow};
+
+use crate::logger::{base::LoggerBase, level::LogLevel};
 
 impl LoggerBase {
-    pub fn log_msg(&self, req_level: LogLevel, msg: &str) {
+    pub fn log_msg(&self, req_level: LogLevel, msg: &str) -> Result<()> {
+        // Make sure we have the required log level.
         if req_level < self.log_level {
-            return;
+            return Ok(());
         }
 
+        // Construct line.
+        let mut line = String::new();
+
+        line.push_str(format!("[{}] {}", req_level, msg).as_str());
+
+        // Print basic log line to console.
+        println!("{}", line);
+
+        // If we don't have a log path, we can just return here.
+        if self.log_path.is_none() {
+            return Ok(());
+        }
+
+        // Retrieve current time for timestamp formation.
         let now = chrono::Local::now();
-        let timestamp = now.format(&self.log_date_format).to_string();
 
-        let log_line = format!("[{}] [{}] {}", req_level as u8, timestamp, msg);
+        // Retrieve timestamp date formats.
+        let ts_file = match self.log_date_format_file {
+            Some(ref fmt) => now.format(fmt).to_string(),
+            None => now.format("%Y-%m-%d").to_string(),
+        };
 
-        if let Some(ref path) = self.log_path {
+        let ts_line = match self.log_date_format_line {
+            Some(ref fmt) => now.format(fmt).to_string(),
+            None => now.format("%Y-%m-%d %H:%M:%S").to_string(),
+        };
+
+        // Prepend timestamp to line.
+        line = format!("[{}] {}", ts_line, line);
+
+        // Determine logging path based off of single/directory settings.
+        let log_path = {
             if self.log_path_is_file {
-                std::fs::write(path, log_line + "\n").expect("Failed to write log");
+                // If we have a single file, just return.
+                self.log_path.as_ref().unwrap().clone()
             } else {
-                std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(path)
-                    .expect("Failed to open log file")
-                    .write_all(log_line.as_bytes())
-                    .expect("Failed to write log");
+                // Treat log path as directory and append timestamped file name.
+                let mut dir = PathBuf::from(self.log_path.as_ref().unwrap());
+
+                dir.push(format!("{}.log", ts_file));
+
+                dir.to_string_lossy().to_string()
             }
-        } else {
-            println!("{}", log_line);
-        }
+        };
+
+        // Attempt to create file/directoy if it doesn't exist and then attempt to write log line.
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .map_err(|e| anyhow!("Failed to open log file: {}", e))?
+            .write_all(line.as_bytes())
+            .map_err(|e| anyhow!("Failed to write log: {}", e))
     }
 }

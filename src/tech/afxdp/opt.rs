@@ -18,3 +18,21 @@ impl Default for AfXdpOpts {
         }
     }
 }
+
+impl AfXdpOpts {
+    pub fn new(
+        queue_id: Option<u16>,
+        need_wakeup: bool,
+        shared_umem: bool,
+        batch_size: u32,
+        zero_copy: bool,
+    ) -> Self {
+        Self {
+            queue_id,
+            need_wakeup,
+            shared_umem,
+            batch_size,
+            zero_copy,
+        }
+    }
+}
