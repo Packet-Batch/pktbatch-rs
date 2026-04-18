@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::str::FromStr;
 
 use std::process::Command;
@@ -7,33 +7,19 @@ use anyhow::{Result, anyhow};
 
 use std::fs;
 
-/// Chooses a random IP from a specific CIDR range.
+/// Chooses a random IP from a specific CIDR range (decimal format).
 ///
 /// # Arguments
-/// * `range` - The range in "IP/CIDR" format (e.g., "192.168.1.0/24")
-/// * `seed`  - Seed value used for random number generation
+/// * `net` - The range net IP.
+/// * `cidr` - The CIDR prefix length (e.g., 24 for a /24).
+/// * `seed` - Seed value used for random number generation.
 ///
 /// # Returns
 /// A random IP address as a string within the specified CIDR range.
-pub fn get_rand_ip(range: &str, seed: u32) -> Result<String> {
-    // Split net IP/CIDR from the range string.
-    let mut parts = range.splitn(2, '/');
-
-    let (s_ip, cidr_str) = match (parts.next(), parts.next()) {
-        (Some(ip), Some(cidr)) => (ip, cidr),
-        _ => return Err(anyhow::anyhow!("Invalid CIDR format")),
-    };
-
-    // Parse the CIDR prefix length.
-    let cidr: u8 = match cidr_str.parse() {
-        Ok(v) if v <= 32 => v,
-        _ => return Err(anyhow::anyhow!("Invalid CIDR value")),
-    };
-
-    // Parse the base IP address into a u32.
-    let ip_addr = match Ipv4Addr::from_str(s_ip) {
-        Ok(ip) => u32::from(ip),
-        Err(_) => return Err(anyhow::anyhow!("Invalid IP address")),
+pub fn get_rand_ip_from_cidr(net: IpAddr, cidr: u8, seed: u32) -> Result<IpAddr> {
+    let net_u32 = match net {
+        IpAddr::V4(v4) => u32::from(v4),
+        IpAddr::V6(_) => return Err(anyhow!("IPv6 not supported at this time")),
     };
 
     // Build the host mask: the complement of the network mask.
@@ -48,9 +34,38 @@ pub fn get_rand_ip(range: &str, seed: u32) -> Result<String> {
     let rand_num = lcg_rand(seed);
 
     // Combine the network prefix with the random host part.
-    let rand_ip_u32 = (ip_addr & !mask) | (mask & rand_num);
+    let rand_ip_u32 = (net_u32 & !mask) | (mask & rand_num);
 
-    Ok(Ipv4Addr::from(rand_ip_u32).to_string())
+    Ok(IpAddr::from(rand_ip_u32))
+}
+
+/// Chooses a random IP from a specific CIDR range.
+///
+/// # Arguments
+/// * `range` - The range in "IP/CIDR" format (e.g., "192.168.1.0/24")
+/// * `seed`  - Seed value used for random number generation
+///
+/// # Returns
+/// A random IP address as a string within the specified CIDR range.
+pub fn get_rand_ip_from_str(range: &str, seed: u32) -> Result<String> {
+    // Split net IP/CIDR from the range string.
+    let (s_ip, cidr_str) = range
+        .split_once('/')
+        .ok_or_else(|| anyhow!("Invalid range format, expected 'IP/CIDR'"))?;
+
+    // Parse the CIDR prefix length.
+    let cidr: u8 = match cidr_str.parse() {
+        Ok(v) if v <= 32 => v,
+        _ => return Err(anyhow::anyhow!("Invalid CIDR value")),
+    };
+
+    // Parsed the net IP and generate a random IP from the CIDR range.
+    let net_ip = match IpAddr::from_str(s_ip) {
+        Ok(ip) => ip,
+        Err(e) => return Err(anyhow!("Invalid IP address '{}': {}", s_ip, e)),
+    };
+
+    get_rand_ip_from_cidr(net_ip, cidr, seed).map(|ip| ip.to_string())
 }
 
 /// Internal function that acts as a minimal LCG random number generator that mirrors the single-step
@@ -172,4 +187,89 @@ pub fn get_ifname_from_src_ip(src_ip: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("failed to parse interface name from 'ip addr' output"))?;
 
     Ok(ifname.to_string())
+}
+
+/// Attempts to retrieve the source IP of the specified interface.
+///
+/// # Arguments
+/// * `if_name` - The name of the interface to query (e.g., "eth0")
+///
+/// # Returns
+/// `Ok(String)` containing the source IP address (e.g., "192.168.1.1") on success,
+/// or an `Err` describing what went wrong.
+pub fn get_src_ip_from_ifname(if_name: &str) -> Result<String> {
+    let output = Command::new("ip")
+        .args(["-o", "-4", "addr", "show", "dev", if_name])
+        .output()
+        .map_err(|e| anyhow!("failed to run 'ip addr show': {}", e))?;
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let src_ip = output_str
+        .split_whitespace()
+        .find(|s| s.contains('/'))
+        .and_then(|s| s.split('/').next())
+        .ok_or_else(|| anyhow!("failed to parse source IP from 'ip addr' output"))?;
+
+    Ok(src_ip.to_string())
+}
+
+/// Parses a MAC address string in the format "aa:bb:cc:dd:ee:ff" into a 6-byte array.
+///
+/// # Arguments
+/// * `mac_str` - The MAC address string to parse (e.g., "00:1A:2B:3C:4D:5E")
+///
+/// # Returns
+/// `Ok([u8; 6])` containing the 6 MAC address bytes on success,
+/// or an `Err` describing what went wrong.
+pub fn get_mac_addr_from_str(mac_str: &str) -> Result<[u8; 6]> {
+    let bytes: Vec<u8> = mac_str
+        .split(':')
+        .map(|octet| u8::from_str_radix(octet, 16))
+        .collect::<Result<_, _>>()
+        .map_err(|e| anyhow!("failed to parse MAC address '{}': {}", mac_str, e))?;
+
+    <[u8; 6]>::try_from(bytes.as_slice())
+        .map_err(|_| anyhow!("expected 6 MAC octets, received {}", bytes.len()))
+}
+
+pub struct NetIpMulti {
+    pub net: String,
+    pub cidr: u8,
+}
+pub enum NetIpType {
+    Single(String),
+    Multi(NetIpMulti),
+}
+
+/// Checks if the given string contains a valid IP address. If the string is a network IP with a CIDR, it will return a structure containing the net IP and CIDR. Otherwise, it will return the string as a single IP.
+pub fn parse_ip_or_cidr(ip_str: &str) -> Result<NetIpType> {
+    if ip_str.contains('/') {
+        let mut parts = ip_str.splitn(2, '/');
+
+        match (parts.next(), parts.next()) {
+            (Some(net), Some(cidr)) => {
+                let cidr = match cidr.parse() {
+                    Ok(v) if v <= 32 => v,
+                    _ => return Err(anyhow!("Invalid CIDR value: {}", cidr)),
+                };
+
+                // If we have a /32 CIDR, treat as a single IP.
+                if cidr == 32 {
+                    return Ok(NetIpType::Single(net.to_string()));
+                } else {
+                    return Ok(NetIpType::Multi(NetIpMulti {
+                        net: net.to_string(),
+                        cidr,
+                    }));
+                }
+            }
+            _ => return Err(anyhow::anyhow!("Invalid CIDR format")),
+        }
+    }
+
+    // Validate that it's a valid IP address.
+    ip_str
+        .parse::<Ipv4Addr>()
+        .map_err(|e| anyhow!("Invalid IP address '{}': {}", ip_str, e))
+        .map(|_| NetIpType::Single(ip_str.to_string()))
 }

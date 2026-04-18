@@ -2,7 +2,12 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::{
-    config::tech::Tech as TechCfg, context::Context, tech::{afxdp::{AfXdpData, TechAfXdp, opt::AfXdpOpts}, ext::TechExt}
+    config::tech::Tech as TechCfg,
+    context::Context,
+    tech::{
+        afxdp::{AfXdpData, TechAfXdp, opt::AfXdpOpts},
+        ext::TechExt,
+    },
 };
 
 #[derive(Clone)]
@@ -59,7 +64,7 @@ impl From<TechCfg> for TechBase {
                     batch_size: opts.batch_size,
                     zero_copy: opts.zero_copy,
                 },
-                sockets: Vec::new(),
+                sockets: Arc::new(HashMap::new()),
             }),
         }
     }

@@ -7,6 +7,7 @@ pub struct IpOpts {
     pub srcs: Option<Vec<String>>,
 
     pub dst: Option<String>,
+    pub dsts: Option<Vec<String>>,
 
     pub tos: Option<u8>,
 
@@ -25,6 +26,7 @@ impl Default for IpOpts {
             src: None,
             srcs: None,
             dst: None,
+            dsts: None,
             tos: None,
             ttl_min: Some(64),
             ttl_max: Some(64),

@@ -8,7 +8,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::anyhow;
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 
 use crate::{
@@ -134,7 +134,7 @@ impl TechExt for TechAfXdp {
         Ok(())
     }
 
-    fn pkt_send(&mut self, ctx: Context, pkt: &[u8], data: Self::TechData) -> anyhow::Result<()> {
+    fn pkt_send(&mut self, ctx: Context, pkt: &[u8], data: Self::TechData) -> Result<()> {
         let mut sock = data.socket;
 
         sock.send_batch_single(pkt)
