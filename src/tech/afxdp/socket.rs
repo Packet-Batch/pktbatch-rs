@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use std::{io::Write, num::NonZeroU32};
 use xsk_rs::{
-    CompQueue, FrameDesc, TxQueue, Umem,
+    CompQueue, FrameDesc, Socket, TxQueue, Umem,
     config::{
         BindFlags, FrameSize, Interface, LibxdpFlags, QueueSize, SocketConfig, UmemConfig, XdpFlags,
     },
@@ -35,10 +35,10 @@ impl From<AfXdpOpts> for XskTxConfig {
         Self {
             if_name: String::new(), // must be set by caller
             queue_id: opts.queue_id.unwrap_or(0),
-            tx_q_size: 1024,
+            tx_q_size: 2048,
             cq_size: opts.batch_size,
             frame_size: 2048,
-            frame_count: opts.batch_size as u32 * 2, // enough frames for 2 batches
+            frame_count: 4096, // enough frames for 2 batches
             batch_size: opts.batch_size as usize,
             need_wakeup: opts.need_wakeup,
             zero_copy: opts.zero_copy,
@@ -68,8 +68,8 @@ impl XskUmem {
         let frame_count =
             NonZeroU32::new(cfg.frame_count).context("frame count must be non-zero")?;
 
-        let (umem, descs) = Umem::new(umem_config, frame_count, cfg.zero_copy)
-            .map_err(|e| anyhow!("failed to create UMEM: {}", e))?;
+        let (umem, descs) =
+            Umem::new(umem_config, frame_count, cfg.zero_copy).context("failed to create UMEM")?;
 
         Ok(Self { umem, descs })
     }
@@ -103,8 +103,8 @@ impl XskTxSocket {
         let if_name: Interface = cfg.if_name.parse().context("invalid interface name")?;
 
         let (tx_q, _rx_q, fq_and_cq) = unsafe {
-            xsk_rs::Socket::new(sock_cfg, &umem.umem, &if_name, cfg.queue_id as u32)
-                .map_err(|e| anyhow!("failed to create socket with shared umem: {}", e))?
+            Socket::new(sock_cfg, &umem.umem, &if_name, cfg.queue_id as u32)
+                .context("failed to create AF_XDP socket")?
         };
 
         let (_fq, cq) =
@@ -159,14 +159,14 @@ impl XskTxSocket {
             anyhow::bail!("tx queue failed to accept {} frame(s)", count);
         }
 
-        if self.tx_q.needs_wakeup() {
-            self.tx_q.wakeup().context("tx wakeup failed")?;
-        }
-
         let mut completed = vec![self.descs[0]; count];
         let mut remaining = count;
 
         while remaining > 0 {
+            if self.tx_q.needs_wakeup() {
+                self.tx_q.wakeup().context("tx wakeup failed")?;
+            }
+
             let n = unsafe { self.cq.consume(&mut completed[..remaining]) };
             remaining = remaining.saturating_sub(n);
         }

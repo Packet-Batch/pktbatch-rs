@@ -7,7 +7,7 @@ use pnet::packet::{
 use crate::{
     batch::data::{
         ip::IP_HDR_LEN,
-        protocol::{Protocol, ProtocolExt},
+        protocol::{FILL_FLAG_DST_PORT, FILL_FLAG_SRC_PORT, Protocol, ProtocolExt},
     },
     config::batch::data::protocol::udp::UdpOpts as UdpOptsCfg,
     util::rand_num,
@@ -15,8 +15,6 @@ use crate::{
 
 pub const LEN_UDP_HDR: usize = 8;
 
-pub const FILL_FLAG_UDP_SRC: u32 = 1 << 0;
-pub const FILL_FLAG_UDP_DST: u32 = 1 << 1;
 pub const FILL_FLAG_UDP_LEN: u32 = 1 << 2;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -163,21 +161,21 @@ impl ProtocolExt for UdpOpts {
                 }
             };
 
-            // Let UDP header length.
+            // Set UDP header length.
             udph.set_length(buff_len as u16);
         }
 
         let (is_static_src, is_static_dst) = {
             // Generate both source and destination ports.
-            let (src_static, _) = self
+            let (_, src_static) = self
                 .gen_src_port(buff, seed)
                 .map_err(|e| anyhow!("Failed to generate source port: {}", e))?;
 
-            let (dst_static, _) = self
+            let (_, dst_static) = self
                 .gen_dst_port(buff, seed)
                 .map_err(|e| anyhow!("Failed to generate destination port: {}", e))?;
 
-            (src_static.is_some(), dst_static.is_some())
+            (src_static, dst_static)
         };
 
         Ok((is_static_src, is_static_dst))
@@ -189,12 +187,12 @@ impl ProtocolExt for UdpOpts {
 
         {
             // Regenerate ports if they were not static.
-            if (flags & FILL_FLAG_UDP_SRC != 0) && self.src_port.is_none() {
+            if (flags & FILL_FLAG_SRC_PORT != 0) && self.src_port.is_none() {
                 self.gen_src_port(buff, seed)
                     .map_err(|e| anyhow!("Failed to generate source port: {}", e))?;
             }
 
-            if (flags & FILL_FLAG_UDP_DST != 0) && self.dst_port.is_none() {
+            if (flags & FILL_FLAG_DST_PORT != 0) && self.dst_port.is_none() {
                 self.gen_dst_port(buff, seed)
                     .map_err(|e| anyhow!("Failed to generate destination port: {}", e))?;
             }

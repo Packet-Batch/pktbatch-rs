@@ -7,7 +7,7 @@ use pnet::packet::{
 use crate::{
     batch::data::{
         ip::IP_HDR_LEN,
-        protocol::{Protocol, ProtocolExt},
+        protocol::{FILL_FLAG_DST_PORT, FILL_FLAG_SRC_PORT, Protocol, ProtocolExt},
     },
     config::batch::data::protocol::tcp::TcpOpts as TcpOptsCfg,
     util::rand_num,
@@ -174,15 +174,15 @@ impl ProtocolExt for TcpOpts {
 
         let (is_static_src, is_static_dst) = {
             // Generate both source and destination ports.
-            let (src_static, _) = self
+            let (_, src_static) = self
                 .gen_src_port(buff, seed)
                 .map_err(|e| anyhow!("Failed to generate source port: {}", e))?;
 
-            let (dst_static, _) = self
+            let (_, dst_static) = self
                 .gen_dst_port(buff, seed)
                 .map_err(|e| anyhow!("Failed to generate destination port: {}", e))?;
 
-            (src_static.is_some(), dst_static.is_some())
+            (src_static, dst_static)
         };
 
         Ok((is_static_src, is_static_dst))
@@ -191,12 +191,12 @@ impl ProtocolExt for TcpOpts {
     #[inline(always)]
     fn fill(&self, buff: &mut [u8], flags: u32, seed: &mut u64) -> Result<()> {
         // Regenerate ports if they were not static.
-        if (flags & FILL_FLAG_TCP_SRC != 0) && self.src_port.is_none() {
+        if (flags & FILL_FLAG_SRC_PORT != 0) && self.src_port.is_none() {
             self.gen_src_port(buff, seed)
                 .map_err(|e| anyhow!("Failed to generate source port: {}", e))?;
         }
 
-        if (flags & FILL_FLAG_TCP_DST != 0) && self.dst_port.is_none() {
+        if (flags & FILL_FLAG_DST_PORT != 0) && self.dst_port.is_none() {
             self.gen_dst_port(buff, seed)
                 .map_err(|e| anyhow!("Failed to generate destination port: {}", e))?;
         }

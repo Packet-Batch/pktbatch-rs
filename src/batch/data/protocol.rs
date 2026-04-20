@@ -9,6 +9,9 @@ use crate::{
     config::batch::data::protocol::ProtocolOpts as ProtocolOptsCfg,
 };
 
+pub const FILL_FLAG_SRC_PORT: u32 = 1 << 0;
+pub const FILL_FLAG_DST_PORT: u32 = 1 << 1;
+
 pub trait ProtocolExt {
     type Opts;
     type State;
@@ -163,11 +166,11 @@ impl ProtocolExt for Protocol {
         }
     }
 
-    fn gen_checksum(&self, pkt: &mut [u8]) -> Result<()> {
+    fn gen_checksum(&self, buff: &mut [u8]) -> Result<()> {
         match self {
-            Protocol::Tcp(tcp) => tcp.gen_checksum(pkt),
-            Protocol::Udp(udp) => udp.gen_checksum(pkt),
-            Protocol::Icmp(icmp) => icmp.gen_checksum(pkt),
+            Protocol::Tcp(tcp) => tcp.gen_checksum(buff),
+            Protocol::Udp(udp) => udp.gen_checksum(buff),
+            Protocol::Icmp(icmp) => icmp.gen_checksum(buff),
         }
     }
 

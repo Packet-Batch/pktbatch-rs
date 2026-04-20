@@ -5,7 +5,9 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use pnet::packet::{ethernet::MutableEthernetPacket, ipv4::MutableIpv4Packet};
+use pnet::packet::{
+    ethernet::MutableEthernetPacket, ipv4::MutableIpv4Packet, udp::MutableUdpPacket,
+};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,7 +16,7 @@ use crate::{
         BatchData,
         eth::ETH_HDR_LEN,
         ip::{FILL_FLAG_IP_DST, FILL_FLAG_IP_ID, FILL_FLAG_IP_SRC, FILL_FLAG_IP_TTL, IP_HDR_LEN},
-        protocol::{Protocol, ProtocolExt},
+        protocol::{FILL_FLAG_DST_PORT, FILL_FLAG_SRC_PORT, Protocol, ProtocolExt},
     },
     context::Context,
     logger::level::LogLevel,
@@ -280,19 +282,11 @@ impl BatchData {
                     let mut flags = 0;
 
                     if !static_proto_src {
-                        flags |= proto
-                            .get_src_port()
-                            .is_some()
-                            .then(|| FILL_FLAG_IP_SRC)
-                            .unwrap_or(0);
+                        flags |= FILL_FLAG_SRC_PORT;
                     }
 
                     if !static_proto_dst {
-                        flags |= proto
-                            .get_dst_port()
-                            .is_some()
-                            .then(|| FILL_FLAG_IP_DST)
-                            .unwrap_or(0);
+                        flags |= FILL_FLAG_DST_PORT;
                     }
 
                     flags
@@ -300,7 +294,7 @@ impl BatchData {
 
                 // Calculate checksums now.
                 // We start with the transport layer.
-                match proto.gen_checksum(&mut buff[IP_HDR_LEN..]) {
+                match proto.gen_checksum(&mut buff[ETH_HDR_LEN..pkt_len as usize]) {
                     Ok(_) => (),
                     Err(e) => {
                         logger
@@ -421,11 +415,12 @@ impl BatchData {
                             .log_msg(
                                 LogLevel::Trace,
                                 &format!(
-                                    "[B{}][T{}] Eth Header - Src: {}, Dst: {}",
+                                    "[B{}][T{}] Eth Header - Src: {}, Dst: {}, Version: {}",
                                     id,
                                     i,
                                     eth.get_source(),
-                                    eth.get_destination()
+                                    eth.get_destination(),
+                                    eth.get_ethertype()
                                 ),
                             )
                             .ok();
@@ -438,16 +433,70 @@ impl BatchData {
                             .log_msg(
                                 LogLevel::Trace,
                                 &format!(
-                                    "[B{}][T{}] IP Header - Src: {}, Dst: {}, ID: {}, TTL: {}",
+                                    "[B{}][T{}] IP Header - Src: {}, Dst: {}, ID: {}, TTL: {}, Length: {}, Csum: {}",
                                     id,
                                     i,
                                     iph.get_source(),
                                     iph.get_destination(),
                                     iph.get_identification(),
-                                    iph.get_ttl()
+                                    iph.get_ttl(),
+                                    iph.get_total_length(),
+                                    iph.get_checksum()
                                 ),
                             )
                             .ok();
+
+                        match &proto {
+                            Protocol::Tcp(t) => {
+                                if let Some(src_port) = t.src_port {
+                                    logger
+                                        .log_msg(
+                                            LogLevel::Trace,
+                                            &format!(
+                                                "[B{}][T{}] TCP Header - Src Port: {}",
+                                                id, i, src_port
+                                            ),
+                                        )
+                                        .ok();
+                                }
+
+                                if let Some(dst_port) = t.dst_port {
+                                    logger
+                                        .log_msg(
+                                            LogLevel::Trace,
+                                            &format!(
+                                                "[B{}][T{}] TCP Header - Dst Port: {}",
+                                                id, i, dst_port
+                                            ),
+                                        )
+                                        .ok();
+                                }
+                            }
+                            Protocol::Udp(u) => {
+                                let udph = MutableUdpPacket::new(
+                                    &mut buff[OFF_START_PROTO_HDR..pkt_len as usize],
+                                )
+                                .expect("Failed to create mutable UDP packet from buffer slice");
+
+                                logger
+                                    .log_msg(
+                                        LogLevel::Trace,
+                                        &format!(
+                                            "[B{}][T{}] UDP Header - Src Port: {}, Dst Port: {}, Len: {}, Csum: {}",
+                                            id,
+                                            i,
+                                            udph.get_source(),
+                                            udph.get_destination(),
+                                            udph.get_length(),
+                                            udph.get_checksum()
+                                        ),
+                                    )
+                                    .ok();
+                            }
+                            Protocol::Icmp(_) => {
+                                // We don't log any ICMP fields for now since we don't support many options.
+                            }
+                        }
                     }
 
                     // Attempt to send packet immediately.
@@ -623,7 +672,8 @@ impl BatchData {
                     // Recalculate checksums if needed.
                     if !csum_not_needed {
                         // We start with the transport layer.
-                        if let Err(e) = proto.gen_checksum(&mut buff[IP_HDR_LEN..]) {
+                        if let Err(e) = proto.gen_checksum(&mut buff[ETH_HDR_LEN..pkt_len as usize])
+                        {
                             logger
                                 .log_msg(
                                     LogLevel::Error,

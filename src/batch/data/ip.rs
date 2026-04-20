@@ -329,7 +329,7 @@ impl IpOpts {
         };
 
         iph.set_version(4);
-        iph.set_header_length(IP_HDR_LEN as u8);
+        iph.set_header_length(IP_IHL as u8);
         iph.set_total_length(buff_sz as u16);
 
         // Set protocol field based on batch config.

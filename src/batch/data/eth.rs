@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use pnet::packet::ethernet::MutableEthernetPacket;
+use pnet::packet::ethernet::{EtherTypes, MutableEthernetPacket};
 
 use crate::{
     config::batch::data::eth::EthOpts as EthOptsCfg,
@@ -84,6 +84,8 @@ impl EthOpts {
 
             eth.set_source(src_mac.into());
             eth.set_destination(dst_mac.into());
+
+            eth.set_ethertype(EtherTypes::Ipv4);
         }
 
         Ok(())
