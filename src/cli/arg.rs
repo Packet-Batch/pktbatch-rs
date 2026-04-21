@@ -1,9 +1,11 @@
 use clap::Parser;
 
+use crate::config::base::DEFAULT_CONFIG_PATH;
+
 #[derive(Parser, Default, Clone)]
 #[clap(version, about, long_about = None)]
 pub struct Args {
-    #[clap(short = 'c', long = "cfg", default_value = "./config.json")]
+    #[clap(short = 'c', long = "cfg", default_value = DEFAULT_CONFIG_PATH, help = "Path to configuration file.")]
     pub config: String,
 
     #[clap(short = 'l', long = "list")]
@@ -106,7 +108,7 @@ pub struct Args {
     pub ovr_bps: Option<u64>,
 
     // Additional overrides (normally not associated with short options)
-    #[clap(long = "waot", help = "Override first batch's wait for finish flag.")]
+    #[clap(long = "wait", help = "Override first batch's wait for finish flag.")]
     pub ovr_wait: Option<bool>,
 
     #[clap(
