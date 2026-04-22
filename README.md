@@ -18,7 +18,7 @@ That said, this will now be the main repository for Packet Batch. While `pktbatc
 * Support for executing multiple batches of packets with different configurations.
 * Command-line interface that includes arguments for overriding the first batch's configuration without modifying the configuration file on disk.
 
-#### 🚨 Experimental
+## 🚨 Experimental
 The Rust implementation of Packet Batch is currently in the early stages of development and is considered **experimental**! That said, I'm still fairly new to Rust and there may be some bugs and performance issues that need to be ironed out.
 
 However, from the testing I've concluded so far, everything should work and performance is actually better than the C version!!
@@ -317,6 +317,9 @@ Here are the available override options that can be set for all batches.
 | Name | Type | Default | Description |
 | --- | --- | --- | --- |
 | `iface` | String | `None` | Override all batches' network interface. |
+
+## ⚠️ Disclaimer
+This project is intended for educational and testing purposes only. The author is not responsible for any misuse of this tool. Always ensure you have proper authorization before using this tool on any network or system.
 
 ## ✍️ Credits
 * [Christian Deacon](https://github.com/gamemann)
