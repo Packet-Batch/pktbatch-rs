@@ -24,6 +24,6 @@ jobs:
     - name: List files
       run: ls -la
     - name: Add execute permissions to executable file
-      run: sudo chmod +x ./pktbatch
+      run: sudo chmod +x ./pktbatch-rs
     - name: Run Packet Batch with help menu
-      run: sudo ./pktbatch -h
+      run: sudo ./pktbatch-rs -h
