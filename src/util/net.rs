@@ -263,3 +263,25 @@ pub fn parse_ip_or_cidr(ip_str: &str) -> Result<NetIpType> {
         .map_err(|e| anyhow!("Invalid IP address '{}': {}", ip_str, e))
         .map(|_| NetIpType::Single(ip_str.to_string()))
 }
+
+/// Reads the transmitted bytes and packets for a given network interface from `/proc/net/dev`.
+/// # Arguments
+/// * `iface` - The name of the network interface (e.g., "eth0") to read stats for.
+///
+/// # Returns
+/// A `Result` containing a tuple of `(tx_bytes, tx_packets)` on success, or an `anyhow::Error` if there was an issue reading the stats.
+pub fn read_tx_stats(iface: &str) -> Result<(u64, u64)> {
+    let content = std::fs::read_to_string("/proc/net/dev")?;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with(iface) {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            // /proc/net/dev columns: iface rx_bytes rx_packets rx_errs rx_drop rx_fifo rx_frame rx_compressed rx_multicast tx_bytes tx_packets ...
+            let tx_bytes = fields[9].parse::<u64>()?;
+            let tx_packets = fields[10].parse::<u64>()?;
+            return Ok((tx_bytes, tx_packets));
+        }
+    }
+
+    Err(anyhow!("Interface {} not found in /proc/net/dev", iface))
+}

@@ -17,8 +17,10 @@ impl LoggerBase {
 
         line.push_str(format!("[{}] {}", req_level, msg).as_str());
 
-        // Print basic log line to console.
-        println!("{}", line);
+        // Print basic log line to console if not watching.
+        if !self.is_watching {
+            println!("{}", line);
+        }
 
         // If we don't have a log path, we can just return here.
         if self.log_path.is_none() {

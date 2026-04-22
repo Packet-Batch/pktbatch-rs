@@ -11,6 +11,8 @@ pub struct LoggerBase {
 
     pub log_date_format_file: Option<String>,
     pub log_date_format_line: Option<String>,
+
+    pub is_watching: bool, // internal state for watcher mode
 }
 
 pub type Logger = LoggerBase;
@@ -22,6 +24,7 @@ impl LoggerBase {
         log_path_is_file: bool,
         log_date_format_file: Option<String>,
         log_date_format_line: Option<String>,
+        is_watching: bool,
     ) -> Self {
         Self {
             log_level,
@@ -29,6 +32,7 @@ impl LoggerBase {
             log_path_is_file,
             log_date_format_file,
             log_date_format_line,
+            is_watching,
         }
     }
 }

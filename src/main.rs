@@ -4,6 +4,7 @@ mod config;
 mod logger;
 mod tech;
 mod util;
+mod watcher;
 
 mod context;
 
@@ -51,6 +52,7 @@ async fn main() -> Result<()> {
         logger_cfg.path_is_file,
         logger_cfg.date_format_file,
         logger_cfg.date_format_line,
+        cli.args.watch,
     );
 
     logger
@@ -230,6 +232,7 @@ async fn main() -> Result<()> {
     // Start batches.
     let batch_hdl = tokio::spawn({
         let ctx = ctx.clone();
+        let iface_fb = iface_fb.clone();
 
         async move {
             match ctx
@@ -262,6 +265,33 @@ async fn main() -> Result<()> {
         }
     });
 
+    let watcher_hdl = match ctx.cli.read().await.clone().args.watch {
+        true => {
+            ctx.logger
+                .read()
+                .await
+                .log_msg(LogLevel::Info, "Starting watcher...")
+                .ok();
+
+            let ctx = ctx.clone();
+            let running = running.clone();
+            let iface_fb = iface_fb.clone();
+
+            Some(tokio::spawn(async move {
+                if let Err(e) = watcher::run::watcher_run(
+                    ctx,
+                    running,
+                    iface_fb.unwrap_or_else(|| "unknown".to_string()),
+                )
+                .await
+                {
+                    eprintln!("Watcher failed: {}", e);
+                }
+            }))
+        }
+        false => None,
+    };
+
     // Setup signal.
     tokio::select! {
         res = batch_hdl => {
@@ -277,6 +307,10 @@ async fn main() -> Result<()> {
             running.store(false, Ordering::Relaxed);
 
         }
+    }
+
+    if let Some(hdl) = watcher_hdl {
+        hdl.await.ok();
     }
 
     Ok(())

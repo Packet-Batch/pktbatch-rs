@@ -94,6 +94,8 @@ Here is a list of the main command-line arguments you can use.
 | Argument | Description |
 | --- | --- |
 | `-c, --cfg <FILE>` | Path to the configuration file (required) |
+| `-l, --list` | Lists the configuration settings and exits. |
+| `-w, --watch` | Displays a real-time stats and a graph of the current TX stats of the interface. |
 | `-h, --help` | Print help information |
 | `-V, --version` | Print version information |
 

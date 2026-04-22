@@ -8,8 +8,19 @@ pub struct Args {
     #[clap(short = 'c', long = "cfg", default_value = DEFAULT_CONFIG_PATH, help = "Path to configuration file.")]
     pub config: String,
 
-    #[clap(short = 'l', long = "list")]
+    #[clap(
+        short = 'l',
+        long = "list",
+        help = "Lists the configuration settings and exits."
+    )]
     pub list_cfg: bool,
+
+    #[clap(
+        short = 'w',
+        long = "watch",
+        help = "Displays a real-time stats and a graph of the current TX stats of the interface."
+    )]
+    pub watch: bool,
 
     /* First batch overrides */
     // Primary/popular overrides (includes short options)
