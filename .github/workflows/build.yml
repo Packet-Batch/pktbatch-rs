@@ -1,0 +1,43 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Run apt update
+      run: sudo apt update
+    - name: Install general dependencies
+      run: sudo apt install -y clang llvm libelf-dev libpcap-dev build-essential libc6-dev-i386 m4 git
+    - name: Install Rust
+      run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    - name: Add Rust to PATH
+      run: echo "PATH=$HOME/.cargo/bin:$PATH" >> $GITHUB_ENV
+    - name: Install LibXDP
+      run: |
+        git clone --recursive https://github.com/xdp-project/xdp-tools.git
+        cd xdp-tools
+        make
+        sudo make install
+        cd lib/libbpf/src
+        make
+        sudo make install
+    - name: Build main
+      run: cargo build --release
+    - name: Install main
+      run: sudo ./install_to_path.sh
+    - name: Store build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-output
+        path: target/release/pktbatch
