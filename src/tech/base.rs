@@ -7,7 +7,7 @@ use crate::{
     config::tech::Tech as TechCfg,
     context::Context,
     tech::{
-        afxdp::{AfXdpData, TechAfXdp, opt::AfXdpOpts},
+        afxdp::{AfXdpDataInit, AfXdpDataThread, TechAfXdp, opt::AfXdpOpts},
         ext::TechExt,
     },
 };
@@ -19,15 +19,21 @@ pub enum TechBase {
 
 pub type Tech = TechBase;
 
-pub enum TechData {
-    AfXdp(AfXdpData),
+pub enum TechDataInit {
+    AfXdp(AfXdpDataInit),
+}
+
+pub enum TechDataThread {
+    AfXdp(AfXdpDataThread),
 }
 
 #[async_trait]
 impl TechExt for TechBase {
     type Tech = TechBase;
     type Opts = ();
-    type TechData = TechData;
+
+    type TechDataInit = TechDataInit;
+    type TechDataThread = TechDataThread;
 
     fn new(_opts: Self::Opts) -> Self {
         unimplemented!("use From<TechCfg> instead")
@@ -41,15 +47,41 @@ impl TechExt for TechBase {
         self
     }
 
-    async fn init(&mut self, ctx: Context, iface_fb: Option<String>) -> Result<()> {
+    async fn init(
+        &mut self,
+        ctx: Context,
+        iface_fb: Option<String>,
+    ) -> Result<Option<Self::TechDataInit>> {
         match self {
-            TechBase::AfXdp(t) => t.init(ctx, iface_fb).await,
+            TechBase::AfXdp(t) => t
+                .init(ctx, iface_fb)
+                .await
+                .map(|opt| opt.map(TechDataInit::AfXdp)),
         }
     }
 
-    fn pkt_send(&mut self, ctx: Context, pkt: &[u8], data: Self::TechData) -> Result<()> {
-        match (self, data) {
-            (TechBase::AfXdp(t), TechData::AfXdp(d)) => t.pkt_send(ctx, pkt, d),
+    fn init_thread(
+        &mut self,
+        ctx: Context,
+        thread_id: u16,
+        iface_fb: Option<String>,
+    ) -> Result<Option<Self::TechDataThread>> {
+        match self {
+            TechBase::AfXdp(t) => t
+                .init_thread(ctx, thread_id, iface_fb)
+                .map(|opt| opt.map(TechDataThread::AfXdp)),
+        }
+    }
+
+    #[inline(always)]
+    fn pkt_send(&mut self, pkt: &[u8], data_thread: Option<&mut Self::TechDataThread>) -> bool {
+        match self {
+            TechBase::AfXdp(t) => t.pkt_send(
+                pkt,
+                data_thread.map(|d| match d {
+                    TechDataThread::AfXdp(d) => d,
+                }),
+            ),
         }
     }
 }

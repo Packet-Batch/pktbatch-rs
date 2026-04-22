@@ -15,6 +15,7 @@ pub struct XskTxSocket {
     pub tx_q: TxQueue,
     pub descs: Vec<FrameDesc>,
     pub batch_size: usize,
+    pub outstanding_tx: u32,
 }
 
 pub struct XskTxConfig {
@@ -116,15 +117,12 @@ impl XskTxSocket {
             tx_q,
             descs: umem.descs.clone(),
             batch_size: cfg.batch_size,
+            outstanding_tx: 0,
         })
     }
 
     fn build_bind_flags(cfg: &XskTxConfig) -> BindFlags {
         let mut flags = BindFlags::empty();
-
-        if cfg.need_wakeup {
-            flags |= BindFlags::XDP_USE_NEED_WAKEUP;
-        }
 
         if cfg.zero_copy {
             flags |= BindFlags::XDP_ZEROCOPY;
@@ -152,42 +150,8 @@ impl XskTxSocket {
     }
 
     #[inline(always)]
-    fn submit_and_drain(&mut self, count: usize) -> Result<()> {
-        let submitted = unsafe { self.tx_q.produce(&self.descs[..count]) };
-
-        if submitted == 0 {
-            anyhow::bail!("tx queue failed to accept {} frame(s)", count);
-        }
-
-        let mut remaining = count;
-        let mut consumed_offset = 0;
-
-        while remaining > 0 {
-            if self.tx_q.needs_wakeup() {
-                self.tx_q.wakeup().context("tx wakeup failed")?;
-            }
-
-            let n = unsafe {
-                self.cq
-                    .consume(&mut self.descs[consumed_offset..consumed_offset + remaining])
-            };
-
-            for desc in &mut self.descs[consumed_offset..consumed_offset + n] {
-                desc.reset_lengths();
-            }
-
-            consumed_offset += n;
-            remaining = remaining.saturating_sub(n);
-        }
-
-        Ok(())
-    }
-
-    /// Send a single packet.
-    #[inline(always)]
     pub fn send(&mut self, pkt: &[u8]) -> Result<()> {
         self.descs[0].reset_lengths();
-
         unsafe {
             self.umem
                 .data_mut(&mut self.descs[0])
@@ -195,56 +159,39 @@ impl XskTxSocket {
                 .write_all(pkt)?
         }
 
-        self.submit_and_drain(1)
-    }
-
-    /// Send a batch of packets, chunked by `self.batch_size`.
-    #[inline(always)]
-    pub fn send_batch(&mut self, pkts: &[&[u8]]) -> Result<()> {
-        for chunk in pkts.chunks(self.batch_size) {
-            let count = chunk.len();
-
-            for (i, pkt) in chunk.iter().enumerate() {
-                let desc = self
-                    .descs
-                    .get_mut(i)
-                    .context("not enough frame descriptors")?;
-                unsafe {
-                    self.umem.data_mut(desc).cursor().write_all(pkt)?;
-                }
+        loop {
+            if unsafe { self.tx_q.produce_and_wakeup(&self.descs[..1]) }.unwrap_or(0) > 0 {
+                break;
             }
+            unsafe { self.cq.consume(&mut self.descs[..]) };
+        }
 
-            self.submit_and_drain(count)?;
+        self.outstanding_tx += 1;
+
+        if self.outstanding_tx >= self.batch_size as u32 {
+            self.complete_tx()?;
         }
 
         Ok(())
     }
 
-    /// Send the same packet repeated `batch_size` times.
-    #[inline(always)]
-    pub fn send_repeated(&mut self, pkt: &[u8]) -> Result<()> {
-        let count = self.batch_size;
+    fn complete_tx(&mut self) -> Result<()> {
+        self.tx_q.wakeup().ok();
 
-        for i in 0..count {
-            let desc = match self.descs.get_mut(i) {
-                Some(d) => d,
-                None => {
-                    return Err(anyhow!(
-                        "not enough frame descriptors for repeated send: needed {}, have {}",
-                        count,
-                        self.descs.len()
-                    ));
-                }
+        // Keep draining until outstanding is under control
+        while self.outstanding_tx > 0 {
+            let n = unsafe {
+                self.cq
+                    .consume(&mut self.descs[self.batch_size..self.batch_size * 2])
             };
 
-            unsafe {
-                self.umem.data_mut(desc).cursor().write_all(pkt)?;
+            if n == 0 {
+                break;
             }
+
+            self.outstanding_tx = self.outstanding_tx.saturating_sub(n as u32);
         }
 
-        match self.submit_and_drain(count) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(anyhow!("failed to send repeated packet: {}", e)),
-        }
+        Ok(())
     }
 }

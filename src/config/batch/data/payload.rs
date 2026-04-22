@@ -16,10 +16,10 @@ pub struct PayloadOpts {
 impl Default for PayloadOpts {
     fn default() -> Self {
         PayloadOpts {
-            len_min: Some(0),
-            len_max: Some(500),
+            len_min: None,
+            len_max: None,
 
-            is_static: false,
+            is_static: true,
             is_file: false,
             is_string: false,
 

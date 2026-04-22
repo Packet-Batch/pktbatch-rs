@@ -20,7 +20,7 @@ use crate::{
     },
     context::Context,
     logger::level::LogLevel,
-    tech::Tech,
+    tech::{Tech, ext::TechExt},
     util::{get_cpu_count, get_cpu_rdtsc, get_ifname_from_src_ip},
 };
 
@@ -61,6 +61,8 @@ impl BatchData {
             next_update: Instant::now(),
         }));
 
+        let core_ids = core_affinity::get_core_ids().unwrap();
+
         // Spawn threads.
         for i in 0..thread_cnt {
             let ctx = ctx.clone();
@@ -70,9 +72,12 @@ impl BatchData {
 
             let rl_state = rl_state.clone();
 
+            let core_id = core_ids[i as usize % core_ids.len()];
             let hdl = thread::spawn(move || {
+                core_affinity::set_for_current(core_id);
+
                 // We'll want to clone immutable data here so that we aren't waiting for locks from shared threads (hurts performance).
-                let tech = ctx.tech.blocking_read().clone();
+                let mut tech = ctx.tech.blocking_read().clone();
                 let logger = ctx.logger.blocking_read().clone();
 
                 let batch = ctx.batch.blocking_read().clone();
@@ -161,12 +166,12 @@ impl BatchData {
                 // Generate payload now so we know what the length is.
                 let (pl_len, static_pl) = match data.payload {
                     Some(ref opt_pl) => match opt_pl.gen_payload(
-                        &mut buff[OFF_START_PROTO_HDR + proto_len as usize..],
+                        &mut buff[proto_hdr_end..],
                         &mut seed,
                         proto_len as usize,
                     ) {
                         Ok(Some((len, is_static))) => (len, is_static),
-                        Ok(None) => (0, false),
+                        Ok(None) => (0, true),
                         Err(e) => {
                             logger
                                 .log_msg(
@@ -178,7 +183,7 @@ impl BatchData {
                             return;
                         }
                     },
-                    None => (0, false),
+                    None => (0, true),
                 };
 
                 // Determine full packet size now so we can use it as a boundry for filling header fields and such.
@@ -311,25 +316,18 @@ impl BatchData {
                 // If we have a static payload + no refill flags, we don't need to recalculate checksums later on.
                 let csum_not_needed = static_pl && refill_ip_flags == 0 && refill_proto_flags == 0;
 
-                // Before the loop, let's retrieve the socket or whatever we need.
-                let sock = {
-                    match &tech {
-                        Tech::AfXdp(t) => match t.sockets.get(&i) {
-                            Some(m) => m,
-                            None => {
-                                logger
-                                    .log_msg(
-                                        LogLevel::Error,
-                                        &format!(
-                                            "No socket found for thread ID {} in AF_XDP tech",
-                                            i
-                                        ),
-                                    )
-                                    .ok();
+                // Before the loop, setup tech specific thread data.
+                let mut t_data = match tech.init_thread(ctx.clone(), i, iface_fb) {
+                    Ok(opt) => opt,
+                    Err(e) => {
+                        logger
+                            .log_msg(
+                                LogLevel::Error,
+                                &format!("Failed to initialize tech thread data: {}", e),
+                            )
+                            .ok();
 
-                                return;
-                            }
-                        },
+                        return;
                     }
                 };
 
@@ -381,125 +379,6 @@ impl BatchData {
                     // Check if we need to stop execution (from main thread signal).
                     if !running.load(Ordering::Relaxed) {
                         break;
-                    }
-
-                    {
-                        logger
-                            .log_msg(
-                                LogLevel::Trace,
-                                &format!(
-                                    "[B{}][T{}] Sending packet of size {} bytes ({})",
-                                    id, i, pkt_len, proto_len
-                                ),
-                            )
-                            .ok();
-
-                        let eth = MutableEthernetPacket::new(&mut buff[..ETH_HDR_LEN as usize])
-                            .expect("Failed to create mutable Ethernet packet from buffer slice");
-
-                        logger
-                            .log_msg(
-                                LogLevel::Trace,
-                                &format!(
-                                    "[B{}][T{}] Eth Header - Src: {}, Dst: {}, Version: {}",
-                                    id,
-                                    i,
-                                    eth.get_source(),
-                                    eth.get_destination(),
-                                    eth.get_ethertype()
-                                ),
-                            )
-                            .ok();
-
-                        let iph =
-                            MutableIpv4Packet::new(&mut buff[OFF_START_IP_HDR..pkt_len as usize])
-                                .expect("Failed to create mutable IPv4 packet from buffer slice");
-
-                        logger
-                            .log_msg(
-                                LogLevel::Trace,
-                                &format!(
-                                    "[B{}][T{}] IP Header - Src: {}, Dst: {}, ID: {}, TTL: {}, Length: {}, Csum: {}",
-                                    id,
-                                    i,
-                                    iph.get_source(),
-                                    iph.get_destination(),
-                                    iph.get_identification(),
-                                    iph.get_ttl(),
-                                    iph.get_total_length(),
-                                    iph.get_checksum()
-                                ),
-                            )
-                            .ok();
-
-                        match &proto {
-                            Protocol::Tcp(t) => {
-                                if let Some(src_port) = t.src_port {
-                                    logger
-                                        .log_msg(
-                                            LogLevel::Trace,
-                                            &format!(
-                                                "[B{}][T{}] TCP Header - Src Port: {}",
-                                                id, i, src_port
-                                            ),
-                                        )
-                                        .ok();
-                                }
-
-                                if let Some(dst_port) = t.dst_port {
-                                    logger
-                                        .log_msg(
-                                            LogLevel::Trace,
-                                            &format!(
-                                                "[B{}][T{}] TCP Header - Dst Port: {}",
-                                                id, i, dst_port
-                                            ),
-                                        )
-                                        .ok();
-                                }
-                            }
-                            Protocol::Udp(_) => {
-                                let udph = MutableUdpPacket::new(
-                                    &mut buff[OFF_START_PROTO_HDR
-                                        ..(OFF_START_PROTO_HDR + proto_len as usize) as usize],
-                                )
-                                .expect("Failed to create mutable UDP packet from buffer slice");
-
-                                logger
-                                    .log_msg(
-                                        LogLevel::Trace,
-                                        &format!(
-                                            "[B{}][T{}] UDP Header - Src Port: {}, Dst Port: {}, Len: {}, Csum: {}",
-                                            id,
-                                            i,
-                                            udph.get_source(),
-                                            udph.get_destination(),
-                                            udph.get_length(),
-                                            udph.get_checksum()
-                                        ),
-                                    )
-                                    .ok();
-                            }
-                            Protocol::Icmp(_) => {
-                                // We don't log any ICMP fields for now since we don't support many options.
-                            }
-                        }
-                    }
-
-                    // Attempt to send packet immediately.
-                    // First run should have all fields set regardless.
-                    match sock.lock().unwrap().send(&buff[..pkt_len as usize]) {
-                        Ok(_) => (),
-                        Err(e) => {
-                            logger
-                                .log_msg(
-                                    LogLevel::Error,
-                                    &format!("[B{}][T{}] Failed to send packet: {}", id, i, e),
-                                )
-                                .ok();
-
-                            // Don't return here - we want to keep trying to send packets even if some sends fail.
-                        }
                     }
 
                     // Check if we've reached the configured duration.
@@ -741,6 +620,19 @@ impl BatchData {
                                     LogLevel::Error,
                                     &format!("Failed to regenerate IP checksum: {}", e),
                                 )
+                                .ok();
+
+                            continue;
+                        }
+                    }
+
+                    // Attempt to send packet immediately.
+                    // First run should have all fields set regardless.
+                    match tech.pkt_send(&buff[..pkt_len as usize], t_data.as_mut()) {
+                        true => (),
+                        false => {
+                            logger
+                                .log_msg(LogLevel::Error, &format!("Failed to send packet"))
                                 .ok();
 
                             continue;

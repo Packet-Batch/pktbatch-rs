@@ -12,7 +12,6 @@ use async_trait::async_trait;
 use crate::{
     config::tech::{Tech as TechCfg, afxdp::TechAfXdpOpts as AfXdpOptsCfg},
     context::Context,
-    logger::level::LogLevel,
     tech::{
         afxdp::{
             opt::AfXdpOpts,
@@ -20,7 +19,6 @@ use crate::{
         },
         ext::TechExt,
     },
-    util::sys::get_cpu_count,
 };
 
 #[derive(Clone, Default)]
@@ -29,15 +27,21 @@ pub struct TechAfXdp {
     pub sockets: Arc<HashMap<u16, Mutex<XskTxSocket>>>,
 }
 
-pub struct AfXdpData {
-    pub socket: Mutex<XskTxSocket>,
+pub struct AfXdpDataInit {
+    pub none: bool,
+}
+
+pub struct AfXdpDataThread {
+    pub socket: XskTxSocket,
 }
 
 #[async_trait]
 impl TechExt for TechAfXdp {
     type Tech = TechAfXdp;
     type Opts = AfXdpOpts;
-    type TechData = AfXdpData;
+
+    type TechDataInit = AfXdpDataInit;
+    type TechDataThread = AfXdpDataThread;
 
     fn new(opts: Self::Opts) -> Self {
         TechAfXdp {
@@ -54,17 +58,24 @@ impl TechExt for TechAfXdp {
         self
     }
 
-    async fn init(&mut self, ctx: Context, iface_fb: Option<String>) -> Result<()> {
-        // We need to determine the number of sockets to create.
-        let sock_cnt = self
-            .opts
-            .sock_cnt
-            .unwrap_or_else(|| get_cpu_count().max(1) as u16);
+    async fn init(
+        &mut self,
+        _ctx: Context,
+        _iface_fb: Option<String>,
+    ) -> Result<Option<Self::TechDataInit>> {
+        Ok(None)
+    }
 
+    fn init_thread(
+        &mut self,
+        ctx: Context,
+        thread_id: u16,
+        iface_fb: Option<String>,
+    ) -> Result<Option<Self::TechDataThread>> {
         let cfg = &ctx.cfg;
 
         // Create tech from config.
-        let tech = match cfg.read().await.tech.clone() {
+        let tech = match cfg.blocking_read().tech.clone() {
             TechCfg::AfXdp(opts) => AfXdpOptsCfg::from(opts.clone()),
         };
 
@@ -72,9 +83,6 @@ impl TechExt for TechAfXdp {
         let if_name = tech.if_name.clone().or(iface_fb).ok_or_else(|| {
             anyhow!("Failed to determine interface name for AF_XDP tech (missing in config and no fallback available)")
         })?;
-
-        // Create hash map for sockets.
-        let mut sock_map = HashMap::new();
 
         // Check if we need to create umem.
         let shared_umem = if self.opts.shared_umem {
@@ -87,98 +95,43 @@ impl TechExt for TechAfXdp {
             None
         };
 
-        ctx.logger
-            .read()
-            .await
-            .log_msg(
-                LogLevel::Info,
-                &format!(
-                    "Creating {} AF_XDP socket(s) on interface '{}'...",
-                    sock_cnt, if_name,
-                ),
-            )
-            .ok();
+        let queue_id = self.opts.queue_id.unwrap_or(thread_id);
+        let t_id = thread_id + 1;
 
-        let mut successful = 0;
+        // Create XSK socket.
+        let mut xsk_cfg = XskTxConfig::from(self.opts.clone());
 
-        for i in 0..sock_cnt {
-            let queue_id = self.opts.queue_id.unwrap_or(i);
-            let t_id = i + 1;
+        xsk_cfg.if_name = if_name.clone();
+        xsk_cfg.queue_id = queue_id;
 
-            ctx.logger
-                .read()
-                .await
-                .log_msg(
-                    LogLevel::Trace,
-                    &format!(
-                        "Creating AF_XDP socket #{} on interface '{}' with queue ID {}...",
-                        t_id, if_name, queue_id
-                    ),
-                )
-                .ok();
-
-            // Create XSK socket.
-            let mut xsk_cfg = XskTxConfig::from(self.opts.clone());
-
-            xsk_cfg.if_name = if_name.clone();
-            xsk_cfg.queue_id = queue_id;
-
-            match XskTxSocket::new(xsk_cfg, shared_umem.as_ref()) {
-                Ok(sock) => {
-                    ctx.logger
-                        .read()
-                        .await
-                        .log_msg(
-                            LogLevel::Info,
-                            &format!("Successfully created AF_XDP socket #{}.", t_id),
-                        )
-                        .ok();
-
-                    sock_map.insert(i, Mutex::new(sock));
-
-                    successful += 1;
-                }
-                Err(e) => {
-                    ctx.logger
-                        .read()
-                        .await
-                        .log_msg(
-                            LogLevel::Error,
-                            &format!("Failed to create AF_XDP socket #{} :: {}", t_id, e),
-                        )
-                        .ok();
-                }
+        let sock = match XskTxSocket::new(xsk_cfg, shared_umem.as_ref()) {
+            Ok(sock) => sock,
+            Err(e) => {
+                return Err(anyhow!(
+                    "Failed to create AF_XDP socket for thread {}: {}",
+                    t_id,
+                    e
+                ));
             }
-        }
+        };
 
-        if sock_map.is_empty() {
-            return Err(anyhow!("Failed to create any AF_XDP sockets."));
-        } else if successful < sock_cnt {
-            ctx.logger
-                .read()
-                .await
-                .log_msg(
-                    LogLevel::Warn,
-                    &format!(
-                        "Only successfully created {}/{} AF_XDP sockets. Continuing with available sockets, but performance may be degraded.",
-                        successful, sock_cnt
-                    ),
-                )
-                .ok();
-        }
-
-        self.sockets = Arc::new(sock_map);
-
-        Ok(())
+        Ok(Some(AfXdpDataThread { socket: sock }))
     }
 
-    fn pkt_send(&mut self, _ctx: Context, pkt: &[u8], data: Self::TechData) -> Result<()> {
-        let mut sock = data.socket.lock().unwrap();
+    #[inline(always)]
+    fn pkt_send(&mut self, pkt: &[u8], data_thread: Option<&mut Self::TechDataThread>) -> bool {
+        let sock = match data_thread {
+            Some(dt) => &mut dt.socket,
+            None => return false,
+        };
 
-        sock.send_repeated(pkt)
-            .map_err(|e| anyhow!("failed to send packet: {}", e))?;
-
-        Ok(())
+        match sock.send(pkt) {
+            Ok(_) => true,
+            Err(e) => {
+                eprintln!("Failed to send packet on AF_XDP socket: {}", e);
+                false
+            }
+        }
     }
 }
 

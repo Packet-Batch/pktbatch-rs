@@ -81,7 +81,7 @@ impl Payload {
         }
 
         let min_len = self.len_min.unwrap_or(0) as usize;
-        let max_len = self.len_max.unwrap_or(buf.len() as u16) as usize;
+        let max_len = self.len_max.unwrap_or(0) as usize;
 
         if min_len < 1 && max_len < 1 {
             return Ok(None);
@@ -116,6 +116,8 @@ impl Payload {
             buf[chunks * 4..chunks * 4 + remainder].copy_from_slice(&rand[..remainder]);
         }
 
-        Ok(Some((len as u16, false)))
+        println!("EEE: {} == {}", min_len, max_len);
+
+        Ok(Some((len as u16, self.is_static && min_len == max_len)))
     }
 }
