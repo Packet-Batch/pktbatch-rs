@@ -61,7 +61,7 @@ pub async fn watcher_run(_ctx: Context, running: Arc<AtomicBool>, iface: String)
     terminal.clear()?;
 
     // Initialize our TX stats.
-    let mut stats = Stats::new(60); // 60 seconds of history
+    let mut stats = Stats::new(60);
 
     let (init_bytes, init_packets) = read_tx_stats(&iface)?;
 
@@ -144,7 +144,7 @@ pub async fn watcher_run(_ctx: Context, running: Arc<AtomicBool>, iface: String)
             let header = Paragraph::new(format!(
                 "PPS: {}    Throughput: {}",
                 format_pps(current_pps),
-                format_bps(current_bps * 8.0), // bytes -> bits
+                format_bps(current_bps),
             ))
             .block(
                 Block::default()
@@ -191,7 +191,7 @@ pub async fn watcher_run(_ctx: Context, running: Arc<AtomicBool>, iface: String)
             let bps_chart = Chart::new(vec![bps_data])
                 .block(
                     Block::default()
-                        .title("Bits Per Second")
+                        .title("Bytes Per Second")
                         .borders(Borders::ALL),
                 )
                 .x_axis(Axis::default().bounds([x_min, x_max]).labels(vec![
