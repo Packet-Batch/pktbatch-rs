@@ -1,13 +1,10 @@
 [Packet Batch](https://github.com/Packet-Batch) is a collection of high-performance tools used for generating network packets. These tools are commonly used for penetration testing, benchmarking, and network monitoring.
 
+![Demo](./image/preview01.gif)
+
 This repository serves as the Rust implementation of Packet Batch. While Packet Batch was originally written in C ([`pktbatch-c`](https://github.com/Packet-Batch/pktbatch-c)), this Rust version aims to provide a safer and more modern codebase while maintaining high performance.
 
 That said, this will now be the main repository for Packet Batch. While `pktbatch-c` will still be maintained, all new features and improvements will be developed in this Rust implementation. The C version will only receive critical bug fixes.
-
-## 🚨 Experimental & Incomplete
-The Rust implementation of Packet Batch is currently in the early stages of development and is not yet complete. While a basic configuration works, many features may still be missing.
-
-Please use [`pktbatch-c`](https://github.com/Packet-Batch/pktbatch-c) for now if you require a fully functional version. The Rust version is still a work in progress, but it will eventually reach feature parity with the C version and then some!
 
 ## 🚀 Features
 * Fast packet generation using technologies such as [AF_XDP sockets](https://docs.kernel.org/networking/af_xdp.html).
@@ -15,8 +12,18 @@ Please use [`pktbatch-c`](https://github.com/Packet-Batch/pktbatch-c) for now if
 * Highly configurable packet generation with support for various protocols and custom payloads.
     * Hostname and DNS lookup support.
     * Supports generating random source and destination IP addresses, ports, and other header fields like the IP TTL and ID fields.
+* A watcher mode that displays real-time statistics and a graph of the current TX stats of the interface.
+    * This retrieves counters from the NIC itself written in the `/proc/net/dev` file. Therefore, displaying stats in the watcher mode should have minimal impact on the overall performance of packet generation!
+* Detailed logging of packet generation activity, including support for different log levels and log file management.
 * Support for executing multiple batches of packets with different configurations.
 * Command-line interface that includes arguments for overriding the first batch's configuration without modifying the configuration file on disk.
+
+#### 🚨 Experimental
+The Rust implementation of Packet Batch is currently in the early stages of development and is considered **experimental**! That said, I'm still fairly new to Rust and there may be some bugs and performance issues that need to be ironed out.
+
+However, from the testing I've concluded so far, everything should work and performance is actually better than the C version!!
+
+This is something I plan on looking into. This is likely due to how the AF_XDP sockets are setup and used in the Rust version, but I haven't had the time to verify this yet.
 
 ## 🛠️ Building
 ### XDP Tools (LibXDP, LibBPF, etc.)
