@@ -29,6 +29,7 @@ pub const FILL_FLAG_IP_DST: u32 = 1 << 1;
 pub const FILL_FLAG_IP_ID: u32 = 1 << 2;
 pub const FILL_FLAG_IP_TTL: u32 = 1 << 3;
 
+#[derive(Debug, Clone)]
 pub struct FullIpAddr {
     pub ip: IpAddr,
     pub cidr: u8,
