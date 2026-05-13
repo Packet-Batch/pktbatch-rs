@@ -36,13 +36,6 @@ async fn main() -> Result<()> {
     let cfg = Config::load_from_file(&cli.args.config)
         .map_err(|e| anyhow!("Failed to load configuration: {}", e))?;
 
-    // Check if we should list and exit.
-    if cli.args.list_cfg {
-        cfg.list();
-
-        return Ok(());
-    }
-
     // Initialize the logger.
     let logger_cfg = cfg.logger.clone();
 
@@ -134,6 +127,13 @@ async fn main() -> Result<()> {
                 ));
             }
         }
+    }
+
+    // Check if we should list and exit.
+    if cli.args.list_cfg {
+        cfg.list();
+
+        return Ok(());
     }
 
     // If we don't have any batches, there is an issue at this point.
