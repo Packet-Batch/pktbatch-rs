@@ -89,14 +89,11 @@ impl BatchData {
 
         // Generate payload now so we know what the length is.
         let (pl_len, static_pl) = match data.payload {
-            Some(ref opt_pl) => {
-                match opt_pl.gen_payload(&mut buff[proto_hdr_end..], &mut seed, proto_len as usize)
-                {
-                    Ok(Some((len, is_static))) => (len, is_static),
-                    Ok(None) => (0, true),
-                    Err(e) => return Err(anyhow!("Failed to generate payload: {}", e)),
-                }
-            }
+            Some(ref opt_pl) => match opt_pl.gen_payload(&mut buff[proto_hdr_end..], &mut seed) {
+                Ok(Some((len, is_static))) => (len, is_static),
+                Ok(None) => (0, true),
+                Err(e) => return Err(anyhow!("Failed to generate payload: {}", e)),
+            },
             None => (0, true),
         };
 

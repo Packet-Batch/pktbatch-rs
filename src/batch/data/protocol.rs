@@ -124,6 +124,16 @@ impl From<ProtocolOptsCfg> for Protocol {
     }
 }
 
+impl From<Protocol> for ProtocolOptsCfg {
+    fn from(proto: Protocol) -> Self {
+        match proto {
+            Protocol::Tcp(tcp) => ProtocolOptsCfg::Tcp(tcp.into()),
+            Protocol::Udp(udp) => ProtocolOptsCfg::Udp(udp.into()),
+            Protocol::Icmp(icmp) => ProtocolOptsCfg::Icmp(icmp.into()),
+        }
+    }
+}
+
 impl ProtocolExt for Protocol {
     type Opts = ();
     type State = ();

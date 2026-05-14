@@ -102,6 +102,27 @@ impl From<BatchDataCfg> for BatchData {
     }
 }
 
+impl From<BatchData> for BatchDataCfg {
+    fn from(data: BatchData) -> Self {
+        Self {
+            name: data.name,
+            iface: data.iface,
+            wait_for_finish: data.wait_for_finish,
+            max_pkt: data.max_pkt,
+            max_byt: data.max_byt,
+            pps: data.pps,
+            bps: data.bps,
+            duration: data.duration,
+            send_interval: data.send_interval,
+            thread_cnt: Some(data.thread_cnt),
+            opt_eth: data.opt_eth.map(Into::into),
+            opt_ip: Some(data.opt_ip.into()),
+            opt_protocol: data.protocol.into(),
+            opt_payload: data.payload.unwrap_or_default().into(),
+        }
+    }
+}
+
 impl Default for BatchData {
     fn default() -> Self {
         BatchData {

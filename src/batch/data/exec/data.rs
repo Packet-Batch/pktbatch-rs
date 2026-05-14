@@ -281,7 +281,6 @@ impl TechExecData {
                     match opt_pl.gen_payload(
                         &mut self.buff[OFF_START_PROTO_HDR + self.proto_len as usize..],
                         &mut self.seed,
-                        self.proto_len as usize,
                     ) {
                         Ok(Some((len, _))) => {
                             // Update packet length accordingly.

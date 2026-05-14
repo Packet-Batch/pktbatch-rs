@@ -30,6 +30,19 @@ impl From<PayloadOptsCfg> for Payload {
     }
 }
 
+impl From<Payload> for PayloadOptsCfg {
+    fn from(opts: Payload) -> Self {
+        PayloadOptsCfg {
+            len_min: opts.len_min,
+            len_max: opts.len_max,
+            is_static: opts.is_static,
+            is_file: opts.is_file,
+            is_string: opts.is_string,
+            exact: opts.exact,
+        }
+    }
+}
+
 impl Payload {
     /// Generates payload based off of configured options. Also determines whether the payload is static or not.
     ///
@@ -40,12 +53,7 @@ impl Payload {
     /// # Returns
     /// A `Result` containing an `Option` with a tuple of the payload length and a boolean indicating whether the payload is static (true) or random (false). If no payload is generated, returns `Ok(None)`. If there is an error during payload generation, returns an `anyhow::Error`.
     #[inline(always)]
-    pub fn gen_payload(
-        &self,
-        buf: &mut [u8],
-        seed: &mut u64,
-        proto_len: usize,
-    ) -> Result<Option<(u16, bool)>> {
+    pub fn gen_payload(&self, buf: &mut [u8], seed: &mut u64) -> Result<Option<(u16, bool)>> {
         // Check for exact first.
         if let Some(exact) = &self.exact {
             // Check if we should read the payload data from a file or use the string directly.

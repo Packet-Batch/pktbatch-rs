@@ -4,6 +4,8 @@ use pnet::packet::{
     tcp::{MutableTcpPacket, ipv4_checksum},
 };
 
+use pnet::packet::tcp::TcpFlags;
+
 use crate::{
     batch::data::{
         ip::IP_HDR_LEN,
@@ -36,6 +38,25 @@ impl From<TcpOptsCfg> for TcpOpts {
             dst_port: cfg.dst_port,
             flags: cfg.flags_to_u8(),
             do_csum: cfg.do_csum,
+        }
+    }
+}
+
+impl From<TcpOpts> for TcpOptsCfg {
+    fn from(opts: TcpOpts) -> Self {
+        Self {
+            src_port: opts.src_port,
+            dst_port: opts.dst_port,
+            do_csum: opts.do_csum,
+
+            flag_syn: (opts.flags & TcpFlags::SYN) != 0,
+            flag_ack: (opts.flags & TcpFlags::ACK) != 0,
+            flag_fin: (opts.flags & TcpFlags::FIN) != 0,
+            flag_rst: (opts.flags & TcpFlags::RST) != 0,
+            flag_psh: (opts.flags & TcpFlags::PSH) != 0,
+            flag_urg: (opts.flags & TcpFlags::URG) != 0,
+            flag_cwr: (opts.flags & TcpFlags::CWR) != 0,
+            flag_ece: (opts.flags & TcpFlags::ECE) != 0,
         }
     }
 }

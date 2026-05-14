@@ -1,5 +1,3 @@
-use std::net::IpAddr;
-
 use anyhow::{Result, anyhow};
 use pnet::packet::icmp::{IcmpCode, IcmpType, MutableIcmpPacket, checksum};
 
@@ -21,22 +19,32 @@ pub struct IcmpOpts {
     pub do_csum: bool,
 }
 
-impl Default for IcmpOpts {
-    fn default() -> Self {
-        IcmpOpts {
-            icmp_type: 8, // Echo Request
-            icmp_code: 0,
-            do_csum: true,
-        }
-    }
-}
-
 impl From<IcmpOptsCfg> for IcmpOpts {
     fn from(cfg: IcmpOptsCfg) -> Self {
         Self {
             icmp_type: cfg.icmp_type.unwrap_or_default(),
             icmp_code: cfg.icmp_code.unwrap_or_default(),
             do_csum: cfg.do_csum,
+        }
+    }
+}
+
+impl From<IcmpOpts> for IcmpOptsCfg {
+    fn from(opts: IcmpOpts) -> Self {
+        Self {
+            icmp_type: Some(opts.icmp_type),
+            icmp_code: Some(opts.icmp_code),
+            do_csum: opts.do_csum,
+        }
+    }
+}
+
+impl Default for IcmpOpts {
+    fn default() -> Self {
+        IcmpOpts {
+            icmp_type: 8, // Echo Request
+            icmp_code: 0,
+            do_csum: true,
         }
     }
 }

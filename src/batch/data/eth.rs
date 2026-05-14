@@ -23,6 +23,15 @@ impl From<EthOptsCfg> for EthOpts {
     }
 }
 
+impl From<EthOpts> for EthOptsCfg {
+    fn from(opts: EthOpts) -> Self {
+        Self {
+            src_mac: opts.src_mac,
+            dst_mac: opts.dst_mac,
+        }
+    }
+}
+
 impl EthOpts {
     /// Attemps to retrieve the source MAC address. If `src_mac` is specified, it will be parsed and returned. If not, the function will attempt to retrieve the gateway MAC address. Errors during parsing or retrieval will be returned as `anyhow::Error`.
     ///
@@ -51,11 +60,7 @@ impl EthOpts {
                 .map_err(|e| anyhow!("Failed to parse destination MAC address {}: {}", mac_str, e)),
             None => match get_gw_mac() {
                 Ok(mac) => Ok(mac),
-                Err(e) => Err(anyhow!(
-                    "Failed to get gateway MAC 
-                address: {}",
-                    e
-                )),
+                Err(e) => Err(anyhow!("Failed to get gateway MAC address: {}", e)),
             },
         }
     }

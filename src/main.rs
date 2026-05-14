@@ -8,33 +8,40 @@ mod watcher;
 
 mod context;
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    process,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
-
-use anyhow::{Result, anyhow};
 
 use crate::{
     batch::{base::Batch, data::BatchData},
     cli::base::Cli,
-    config::{base::Config, batch::ovr_opts::apply_first_batch_overrides, tech::Tech},
+    config::{
+        base::Config,
+        batch::{data::BatchData as BatchDataCfg, ovr_opts::apply_first_batch_overrides},
+        tech::Tech,
+    },
     context::ContextData,
     logger::{base::Logger, level::LogLevel},
-    tech::base::TechBase,
     util::get_ifname_from_src_ip,
 };
 
 use crate::tech::ext::TechExt;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
     // Parse CLI arguments.
     let cli = Cli::parse();
 
     // Load configuration from file.
-    let cfg = Config::load_from_file(&cli.args.config)
-        .map_err(|e| anyhow!("Failed to load configuration: {}", e))?;
+    let mut cfg = Config::load_from_file(&cli.args.config).unwrap_or_else(|e| {
+        println!("[WARNING] Failed to load configuration file: {}", e);
+
+        Config::default()
+    });
 
     // Initialize the logger.
     let logger_cfg = cfg.logger.clone();
@@ -57,14 +64,11 @@ async fn main() -> Result<()> {
         .log_msg(LogLevel::Trace, "Initializing batch...")
         .ok();
 
-    let mut batch = Batch::new(
-        cfg.batch.batches.iter().map(|b| b.clone().into()).collect(),
-        cfg.batch
-            .ovr_opts
-            .clone()
-            .map(|o| o.try_into())
-            .transpose()
-            .map_err(|e| {
+    // Get override options.
+    let ovr_opts = match cfg.batch.ovr_opts.clone() {
+        Some(ovr_opts_cfg) => match ovr_opts_cfg.try_into() {
+            Ok(ovr_opts) => Some(ovr_opts),
+            Err(e) => {
                 logger
                     .log_msg(
                         LogLevel::Fatal,
@@ -72,8 +76,15 @@ async fn main() -> Result<()> {
                     )
                     .ok();
 
-                anyhow!("Failed to convert batch override options: {}", e)
-            })?,
+                process::exit(1);
+            }
+        },
+        None => None,
+    };
+
+    let mut batch = Batch::new(
+        cfg.batch.batches.iter().map(|b| b.clone().into()).collect(),
+        ovr_opts,
     );
 
     // Check for first batch override.
@@ -97,9 +108,20 @@ async fn main() -> Result<()> {
                         .ok();
 
                     if batch.batches.is_empty() {
-                        batch.batches.push(first_batch);
+                        batch.batches.push(first_batch.clone());
                     } else {
-                        batch.batches[0] = first_batch;
+                        batch.batches[0] = first_batch.clone();
+                    }
+
+                    // Override the first batch in the config in the case for listing below.
+                    let cfg_batch_cnt = cfg.batch.batches.len();
+
+                    if cfg_batch_cnt > 0 {
+                        cfg.batch.batches[0] = first_batch.clone().into()
+                    } else {
+                        cfg.batch
+                            .batches
+                            .push(BatchDataCfg::from(first_batch.clone()));
                     }
                 } else {
                     logger
@@ -121,10 +143,7 @@ async fn main() -> Result<()> {
                     )
                     .ok();
 
-                return Err(anyhow!(
-                    "Failed to apply first batch overrides from CLI arguments: {}",
-                    e
-                ));
+                process::exit(1);
             }
         }
     }
@@ -133,7 +152,7 @@ async fn main() -> Result<()> {
     if cli.args.list_cfg {
         cfg.list();
 
-        return Ok(());
+        process::exit(0);
     }
 
     // If we don't have any batches, there is an issue at this point.
@@ -145,24 +164,25 @@ async fn main() -> Result<()> {
             )
             .ok();
 
-        return Err(anyhow!(
-            "No batches defined in configuration after applying overrides."
-        ));
+        process::exit(1);
     }
 
     // Create the tech.
     logger.log_msg(LogLevel::Trace, "Initializing tech...").ok();
 
-    let tech: TechBase = cfg.tech.clone().try_into().map_err(|e| {
-        logger
-            .log_msg(
-                LogLevel::Fatal,
-                &format!("Failed to initialize tech (conversion with config): {}", e),
-            )
-            .ok();
+    let tech = match cfg.tech.clone().try_into() {
+        Ok(tech) => tech,
+        Err(e) => {
+            logger
+                .log_msg(
+                    LogLevel::Fatal,
+                    &format!("Failed to initialize tech (conversion with config): {}", e),
+                )
+                .ok();
 
-        anyhow!("Failed to initialize tech (conversion with config): {}", e)
-    })?;
+            process::exit(1);
+        }
+    };
 
     // Now we need to initialize the global context.
     logger
@@ -216,7 +236,7 @@ async fn main() -> Result<()> {
             )
             .ok();
 
-        return Err(anyhow!("Failed to setup tech (e.g. create sockets): {}", e));
+        process::exit(1);
     }
 
     ctx.logger
@@ -249,8 +269,6 @@ async fn main() -> Result<()> {
                         .await
                         .log_msg(LogLevel::Info, "Batches completed successfully.")
                         .ok();
-
-                    Ok(())
                 }
                 Err(e) => {
                     ctx.logger
@@ -259,7 +277,7 @@ async fn main() -> Result<()> {
                         .log_msg(LogLevel::Error, &format!("Batch execution failed: {}", e))
                         .ok();
 
-                    Err(anyhow!("Batch execution failed: {}", e))
+                    process::exit(1);
                 }
             }
         }
@@ -295,7 +313,15 @@ async fn main() -> Result<()> {
     // Setup signal.
     tokio::select! {
         res = batch_hdl => {
-            res??;
+            if let Err(e) = res {
+                ctx.logger
+                    .read()
+                    .await
+                    .log_msg(LogLevel::Error, &format!("Batch task failed: {}", e))
+                    .ok();
+
+                process::exit(1);
+            }
         }
         _ = tokio::signal::ctrl_c() => {
             ctx.logger
@@ -312,6 +338,4 @@ async fn main() -> Result<()> {
     if let Some(hdl) = watcher_hdl {
         hdl.await.ok();
     }
-
-    Ok(())
 }

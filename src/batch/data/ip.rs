@@ -81,6 +81,29 @@ impl From<IpOptsCfg> for IpOpts {
     }
 }
 
+impl From<IpOpts> for IpOptsCfg {
+    fn from(opts: IpOpts) -> Self {
+        Self {
+            srcs: opts.src.clone(),
+            dsts: opts.dst.clone(),
+            src: opts
+                .src
+                .as_ref()
+                .and_then(|src_vec| src_vec.first().cloned()),
+            dst: opts
+                .dst
+                .as_ref()
+                .and_then(|dst_vec| dst_vec.first().cloned()),
+            tos: opts.tos,
+            ttl_min: opts.ttl_min,
+            ttl_max: opts.ttl_max,
+            id_min: opts.id_min,
+            id_max: opts.id_max,
+            do_csum: opts.do_csum,
+        }
+    }
+}
+
 impl IpOpts {
     /// Retrieves the source IP addresses based on the configuration. If `src` is specified, it will parse each entry as either a single IP or CIDR notation and return a vector of `FullIpAddr`. If `src` is not specified, it will attempt to retrieve the source IP from the provided interface name. Errors during parsing or retrieval will be returned as `anyhow::Error`.
     ///

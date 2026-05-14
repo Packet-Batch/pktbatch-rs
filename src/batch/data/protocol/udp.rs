@@ -35,6 +35,16 @@ impl From<UdpOptsCfg> for UdpOpts {
     }
 }
 
+impl From<UdpOpts> for UdpOptsCfg {
+    fn from(opts: UdpOpts) -> Self {
+        Self {
+            src_port: opts.src_port,
+            dst_port: opts.dst_port,
+            do_csum: opts.do_csum,
+        }
+    }
+}
+
 impl From<UdpOpts> for Protocol {
     fn from(opts: UdpOpts) -> Self {
         Protocol::Udp(opts)
