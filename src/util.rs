@@ -1,6 +1,7 @@
 pub mod net;
 pub mod rand_fast;
 pub mod sys;
+pub mod unit;
 
 pub use net::{
     get_gw_mac, get_ifname_from_src_ip, get_mac_addr_from_str, get_rand_ip_from_cidr,
@@ -8,3 +9,4 @@ pub use net::{
 };
 pub use rand_fast::rand_num;
 pub use sys::{get_cpu_count, get_cpu_rdtsc};
+pub use unit::{format_byt, format_pkt};

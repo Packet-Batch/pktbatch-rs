@@ -58,6 +58,7 @@ pub fn get_rand_ip_from_cidr(net: IpAddr, cidr: u8, seed: &mut u64) -> Result<Ip
 ///
 /// # Returns
 /// A random IP address as a string within the specified CIDR range.
+#[allow(dead_code)]
 pub fn get_rand_ip_from_str(range: &str, seed: &mut u64) -> Result<String> {
     // Split net IP/CIDR from the range string.
     let (s_ip, cidr_str) = range
@@ -269,17 +270,24 @@ pub fn parse_ip_or_cidr(ip_str: &str) -> Result<NetIpType> {
 /// * `iface` - The name of the network interface (e.g., "eth0") to read stats for.
 ///
 /// # Returns
-/// A `Result` containing a tuple of `(tx_bytes, tx_packets)` on success, or an `anyhow::Error` if there was an issue reading the stats.
+/// A `Result` containing a tuple of `(tx_packets, tx_bytes)` on success, or an `anyhow::Error` if there was an issue reading the stats.
 pub fn read_tx_stats(iface: &str) -> Result<(u64, u64)> {
     let content = std::fs::read_to_string("/proc/net/dev")?;
+
     for line in content.lines() {
         let line = line.trim();
         if line.starts_with(iface) {
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            // /proc/net/dev columns: iface rx_bytes rx_packets rx_errs rx_drop rx_fifo rx_frame rx_compressed rx_multicast tx_bytes tx_packets ...
-            let tx_bytes = fields[9].parse::<u64>()?;
-            let tx_packets = fields[10].parse::<u64>()?;
-            return Ok((tx_bytes, tx_packets));
+            let (_, stats) = line
+                .split_once(':')
+                .ok_or_else(|| anyhow!("Malformed line for interface {}", iface))?;
+
+            let fields: Vec<&str> = stats.split_whitespace().collect();
+            // After splitting on ':', fields are 0-indexed from rx_bytes:
+            // [0]=rx_bytes [1]=rx_packets ... [8]=tx_bytes [9]=tx_packets
+            let tx_bytes = fields[8].parse::<u64>()?;
+            let tx_packets = fields[9].parse::<u64>()?;
+
+            return Ok((tx_packets, tx_bytes));
         }
     }
 

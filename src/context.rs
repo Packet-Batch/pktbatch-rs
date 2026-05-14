@@ -1,8 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 
 use tokio::sync::RwLock;
 
-use crate::{batch::base::Batch, cli::base::Cli, config::base::Config, logger::base::Logger, tech::base::Tech};
+use crate::{
+    batch::base::Batch, cli::base::Cli, config::base::Config, logger::base::Logger,
+    tech::base::Tech,
+};
 
 pub struct ContextData {
     pub cfg: RwLock<Config>,
@@ -12,6 +15,8 @@ pub struct ContextData {
     pub tech: RwLock<Tech>,
 
     pub batch: RwLock<Batch>,
+
+    pub running: Arc<AtomicBool>,
 }
 
 pub type Context = Arc<ContextData>;
@@ -24,6 +29,7 @@ impl ContextData {
             cli: RwLock::new(cli),
             tech: RwLock::new(tech),
             batch: RwLock::new(batch),
+            running: Arc::new(AtomicBool::new(true)),
         })
     }
 }

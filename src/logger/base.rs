@@ -1,8 +1,13 @@
-use serde::{Deserialize, Serialize};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+};
 
 use crate::logger::level::LogLevel;
 
-#[derive(Clone, Default, Serialize, Deserialize)]
+pub type LogBuffer = Arc<Mutex<VecDeque<String>>>;
+
+#[derive(Clone, Default)]
 pub struct LoggerBase {
     pub log_level: LogLevel,
     pub log_path: Option<String>,
@@ -12,7 +17,7 @@ pub struct LoggerBase {
     pub log_date_format_file: Option<String>,
     pub log_date_format_line: Option<String>,
 
-    pub is_watching: bool, // internal state for watcher mode
+    pub buffer: Option<LogBuffer>,
 }
 
 pub type Logger = LoggerBase;
@@ -24,7 +29,7 @@ impl LoggerBase {
         log_path_is_file: bool,
         log_date_format_file: Option<String>,
         log_date_format_line: Option<String>,
-        is_watching: bool,
+        buffer: Option<LogBuffer>,
     ) -> Self {
         Self {
             log_level,
@@ -32,7 +37,9 @@ impl LoggerBase {
             log_path_is_file,
             log_date_format_file,
             log_date_format_line,
-            is_watching,
+            buffer,
         }
     }
 }
+
+pub const DEFAULT_BACKLOG_SZ: usize = 200;

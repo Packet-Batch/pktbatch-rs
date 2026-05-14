@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::config::base::DEFAULT_CONFIG_PATH;
+use crate::{config::base::DEFAULT_CONFIG_PATH, logger::base::DEFAULT_BACKLOG_SZ};
 
 #[derive(Parser, Default, Clone)]
 #[clap(version, about, long_about = None)]
@@ -21,6 +21,22 @@ pub struct Args {
         help = "Displays a real-time stats and a graph of the current TX stats of the interface."
     )]
     pub watch: bool,
+
+    #[clap(
+        short = 'B',
+        long = "backlog",
+        default_value_t = DEFAULT_BACKLOG_SZ,
+        help = "The amount of logs to keep in the buffer when in watch mode."
+    )]
+    pub backlog: usize,
+
+    #[clap(
+        short = 'W',
+        long = "refresh",
+        default_value_t = 500,
+        help = "The refresh rate (in milliseconds) of the stats in watch mode."
+    )]
+    pub refresh_rate: u64,
 
     /* First batch overrides */
     // Primary/popular overrides (includes short options)

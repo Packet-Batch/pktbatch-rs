@@ -11,6 +11,8 @@ pub struct ConfigBase {
     pub tech: Tech,
 
     pub batch: Batch,
+
+    pub cur_batch: Option<Batch>,
 }
 
 pub type Config = ConfigBase;

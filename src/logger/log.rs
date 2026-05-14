@@ -17,8 +17,17 @@ impl LoggerBase {
 
         line.push_str(format!("[{}] {}", req_level, msg).as_str());
 
-        // Print basic log line to console if not watching.
-        if !self.is_watching {
+        // If we have a buffer, it means we're in watch mode and need to add the line to the buffer along with handle overflow.
+        if let Some(ref log_buff) = self.buffer {
+            let mut log_buff = log_buff.lock().unwrap();
+
+            if log_buff.len() == log_buff.capacity() {
+                log_buff.pop_front();
+            }
+
+            log_buff.push_back(line.clone());
+        } else {
+            // Basic print to stdout.
             println!("{}", line);
         }
 

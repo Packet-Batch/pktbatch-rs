@@ -9,11 +9,9 @@ mod watcher;
 mod context;
 
 use std::{
+    collections::VecDeque,
     process,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 
 use crate::{
@@ -25,8 +23,12 @@ use crate::{
         tech::Tech,
     },
     context::ContextData,
-    logger::{base::Logger, level::LogLevel},
+    logger::{
+        base::{LogBuffer, Logger},
+        level::LogLevel,
+    },
     util::get_ifname_from_src_ip,
+    watcher::base::Watcher,
 };
 
 use crate::tech::ext::TechExt;
@@ -43,6 +45,15 @@ async fn main() {
         Config::default()
     });
 
+    // Create log buffer for watcher.
+    let log_buff: Option<LogBuffer> = if cli.args.watch {
+        Some(Arc::new(Mutex::new(VecDeque::with_capacity(
+            cli.args.backlog,
+        ))))
+    } else {
+        None
+    };
+
     // Initialize the logger.
     let logger_cfg = cfg.logger.clone();
 
@@ -52,7 +63,7 @@ async fn main() {
         logger_cfg.path_is_file,
         logger_cfg.date_format_file,
         logger_cfg.date_format_line,
-        cli.args.watch,
+        log_buff.clone(),
     );
 
     logger
@@ -190,6 +201,7 @@ async fn main() {
         .ok();
 
     let ctx = ContextData::new(cfg, logger, cli, tech, batch);
+    let ctx_end = ctx.clone();
 
     // Before getting to the tech and batches, let's try to retrieve a fallback interface.
     let iface_fb = {
@@ -246,8 +258,7 @@ async fn main() {
         .ok();
 
     // We need to create an atomic bool to signal halting execution in batch threads.
-    let running = Arc::new(AtomicBool::new(true));
-    let running_batch = running.clone();
+    let running_batch = ctx.running.clone();
 
     // Start batches.
     let batch_hdl = tokio::spawn({
@@ -283,38 +294,56 @@ async fn main() {
         }
     });
 
-    let watcher_hdl = match ctx.cli.read().await.clone().args.watch {
-        true => {
+    let mut watcher = match Watcher::new(
+        ctx.clone(),
+        log_buff.clone(),
+        iface_fb.clone(),
+        ctx.cli.read().await.clone().args.refresh_rate,
+    ) {
+        Ok(w) => w,
+        Err(e) => {
             ctx.logger
                 .read()
                 .await
-                .log_msg(LogLevel::Info, "Starting watcher...")
+                .log_msg(
+                    LogLevel::Fatal,
+                    &format!("Failed to initialize watcher context: {}", e),
+                )
                 .ok();
 
-            let ctx = ctx.clone();
-            let running = running.clone();
-            let iface_fb = iface_fb.clone();
-
-            Some(tokio::spawn(async move {
-                if let Err(e) = watcher::run::watcher_run(
-                    ctx,
-                    running,
-                    iface_fb.unwrap_or_else(|| "unknown".to_string()),
-                )
-                .await
-                {
-                    eprintln!("Watcher failed: {}", e);
-                }
-            }))
+            process::exit(1);
         }
-        false => None,
     };
+
+    if ctx.cli.read().await.clone().args.watch {
+        ctx.logger
+            .read()
+            .await
+            .log_msg(LogLevel::Info, "Starting watcher...")
+            .ok();
+
+        tokio::spawn(async move {
+            match watcher.run().await {
+                Ok(_) => (),
+                Err(e) => {
+                    // We can't log here since the watcher is likely where the logger is, so we just print to stderr.
+                    ctx.logger
+                        .read()
+                        .await
+                        .log_msg(LogLevel::Error, &format!("Watcher execution failed: {}", e))
+                        .ok();
+
+                    process::exit(1);
+                }
+            }
+        });
+    }
 
     // Setup signal.
     tokio::select! {
         res = batch_hdl => {
             if let Err(e) = res {
-                ctx.logger
+                ctx_end.logger
                     .read()
                     .await
                     .log_msg(LogLevel::Error, &format!("Batch task failed: {}", e))
@@ -324,18 +353,21 @@ async fn main() {
             }
         }
         _ = tokio::signal::ctrl_c() => {
-            ctx.logger
+            ctx_end.logger
                 .read()
                 .await
                 .log_msg(LogLevel::Info, "Received Ctrl+C signal. Shutting down...")
                 .ok();
 
-            running.store(false, Ordering::Relaxed);
+            ctx_end.running.store(false, Ordering::Relaxed);
 
         }
     }
 
-    if let Some(hdl) = watcher_hdl {
-        hdl.await.ok();
-    }
+    ctx_end
+        .logger
+        .read()
+        .await
+        .log_msg(LogLevel::Info, "Waiting for batch task to finish...")
+        .ok();
 }

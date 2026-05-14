@@ -27,6 +27,7 @@ impl Config {
     ///
     /// # Returns
     /// * `Result<()>` - An empty result or an error if saving fails.
+    #[allow(dead_code)]
     pub fn save_to_disk(&self, path: &str) -> Result<()> {
         let contents = serde_json::to_string_pretty(self)
             .map_err(|e| anyhow!("Failed to serialize config: {}", e))?;
