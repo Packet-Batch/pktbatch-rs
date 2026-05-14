@@ -25,6 +25,7 @@ pub fn format_byt(bytes: f64, sec: bool) -> String {
         format!("{:.2} {}b", value, prefix)
     }
 }
+
 /// Formats a packet count or packet rate into a human-readable string.
 ///
 /// # Arguments
