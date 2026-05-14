@@ -105,6 +105,8 @@ Here is a list of the main command-line arguments you can use.
 | `-c, --cfg <FILE>` | Path to the configuration file (required) |
 | `-l, --list` | Lists the configuration settings and exits. |
 | `-w, --watch` | Displays a real-time stats and a graph of the current TX stats of the interface. |
+| `-B --backlog <VAL>` | The amount of logs to store in the log buffer in watch mode (default: `200`). |
+| `-W --refresh <VAL>` | The refresh interval in milliseconds for the stats and graph in watch mode (default: `500`). |
 | `-h, --help` | Print help information |
 | `-V, --version` | Print version information |
 
